@@ -40,6 +40,13 @@ body {
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
+.auth-logo {
+  display: block;
+  height: 36px;
+  width: auto;
+  margin: 0 0 20px;
+}
+
 .auth-card h1 {
   font-size: 20px;
   margin: 0 0 4px;
@@ -125,7 +132,14 @@ button {
   align-items: center;
   justify-content: space-between;
 }
-.topbar .brand { font-weight: 700; font-size: 15px; }
+.topbar .brand { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+.brand-logo {
+  height: 22px;
+  width: auto;
+  background: #fff;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
 .topbar .who { font-size: 13px; opacity: 0.85; }
 .topbar button {
   background: rgba(255,255,255,0.12);
