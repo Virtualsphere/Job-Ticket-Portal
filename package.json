@@ -1,0 +1,24 @@
+{
+  "name": "job-ticket-portal",
+  "version": "2.0.0",
+  "description": "Job ticket portal for Admin, Production Manager, Engineer and Customer with MySQL storage and email notifications via Nodemailer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "migrate": "node scripts/migrate.js",
+    "seed:admin": "node scripts/seed-admin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-async-errors": "^3.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.0",
+    "mysql2": "^3.11.0",
+    "nodemailer": "^6.9.14",
+    "uuid": "^9.0.1"
+  }
+}
