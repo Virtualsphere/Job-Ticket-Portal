@@ -38,6 +38,11 @@ function statusBadgeColor(status) {
   return map[status] || '#374151';
 }
 
+function engineerListText(job) {
+  const engineers = Array.isArray(job.engineers) ? job.engineers : [];
+  return engineers.length ? engineers.map((e) => e.name).join(', ') : 'Not yet assigned';
+}
+
 function baseTemplate({ heading, intro, job, footerNote }) {
   const color = statusBadgeColor(job.status);
   return `
@@ -54,7 +59,8 @@ function baseTemplate({ heading, intro, job, footerNote }) {
           <span style="background:${color}; color:#fff; padding:2px 10px; border-radius:12px; font-size:12px;">${job.status}</span>
         </td></tr>
         <tr><td style="padding:6px 0; color:#6b7280;">Customer</td><td style="padding:6px 0;">${job.customerName} (${job.customerEmail})</td></tr>
-        <tr><td style="padding:6px 0; color:#6b7280;">Assigned Engineer</td><td style="padding:6px 0;">${job.assignedEngineerName || 'Not yet assigned'}</td></tr>
+        <tr><td style="padding:6px 0; color:#6b7280;">Assigned Engineer(s)</td><td style="padding:6px 0;">${engineerListText(job)}</td></tr>
+        <tr><td style="padding:6px 0; color:#6b7280;">Production Manager</td><td style="padding:6px 0;">${job.assignedPmName || 'Not yet assigned'}</td></tr>
         <tr><td style="padding:6px 0; color:#6b7280;">Deadline</td><td style="padding:6px 0;">${job.productionDetails?.deadline || 'N/A'}</td></tr>
       </table>
       <p style="font-size:13px; color:#6b7280; margin-top:18px;">${footerNote || ''}</p>
@@ -73,15 +79,23 @@ const TEMPLATES = {
       footerNote: 'You will receive further updates as this job progresses.',
     }),
   }),
-  job_assigned: (job) => ({
-    subject: `Job Ticket Assigned — #${job.jobNumber} ${job.title}`,
-    html: baseTemplate({
-      heading: 'Job Ticket Assigned to an Engineer',
-      intro: `This job ticket has been assigned to <b>${job.assignedEngineerName}</b>.`,
-      job,
-      footerNote: 'Work is expected to begin shortly.',
-    }),
-  }),
+  job_assigned: (job) => {
+    const names = (Array.isArray(job.engineers) ? job.engineers : []).map((e) => e.name);
+    const intro = names.length === 0
+      ? 'This job ticket has been updated.'
+      : names.length === 1
+        ? `This job ticket has been assigned to <b>${names[0]}</b>.`
+        : `This job ticket has been assigned to <b>${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}</b>.`;
+    return {
+      subject: `Job Ticket Assigned — #${job.jobNumber} ${job.title}`,
+      html: baseTemplate({
+        heading: 'Job Ticket Assigned to Engineer(s)',
+        intro,
+        job,
+        footerNote: 'Work is expected to begin shortly.',
+      }),
+    };
+  },
   status_update: (job, note) => ({
     subject: `Job Status Update — #${job.jobNumber}: ${job.status}`,
     html: baseTemplate({

@@ -228,10 +228,31 @@ async function initCreateJobPanel() {
   addMaterialRow();
   document.getElementById('addMaterialBtn').addEventListener('click', () => addMaterialRow());
 
+  try {
+    const engineers = await api('/users?role=engineer');
+    document.getElementById('jobEngineerIds').innerHTML = engineers.length
+      ? engineers.map((e) => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.email)})</option>`).join('')
+      : '<option value="" disabled>No engineers registered yet</option>';
+  } catch (err) {
+    toast('Could not load engineers: ' + err.message);
+  }
+
+  if (user.role === 'admin') {
+    document.getElementById('jobPmField').style.display = 'block';
+    try {
+      const pms = await api('/users?role=production_manager');
+      document.getElementById('jobPmSelect').innerHTML = '<option value="">Unassigned</option>' +
+        pms.map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.email)})</option>`).join('');
+    } catch (err) {
+      toast('Could not load production managers: ' + err.message);
+    }
+  }
+
   document.getElementById('createJobForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const customerId = document.getElementById('jobCustomerId').value;
     if (!customerId) { toast('Type a customer email and select a match from the dropdown'); return; }
+    const pmSelect = document.getElementById('jobPmSelect');
     const body = {
       title: document.getElementById('jobTitle').value.trim(),
       customerId,
@@ -242,6 +263,8 @@ async function initCreateJobPanel() {
         deadline: document.getElementById('pdDeadline').value,
         specifications: document.getElementById('pdSpecs').value.trim(),
       },
+      engineerIds: Array.from(document.getElementById('jobEngineerIds').selectedOptions).map((o) => o.value).filter(Boolean),
+      pmId: user.role === 'admin' ? (pmSelect.value || null) : undefined,
     };
     try {
       const res = await api('/jobs', { method: 'POST', body });
@@ -268,6 +291,8 @@ async function initCreateJobPanel() {
       document.getElementById('jobCustomerId').value = '';
       document.getElementById('materialsList').innerHTML = '';
       addMaterialRow();
+      document.getElementById('jobEngineerIds').selectedIndex = -1;
+      if (pmSelect) pmSelect.value = '';
       loadJobs();
     } catch (err) {
       toast('Error: ' + err.message);
@@ -290,7 +315,9 @@ async function loadJobs() {
       listEl.innerHTML = '<div class="empty-state">No jobs yet.</div>';
       return;
     }
-    listEl.innerHTML = jobs.map((j) => `
+    listEl.innerHTML = jobs.map((j) => {
+      const engineerNames = (j.engineers || []).map((e) => e.name).join(', ') || 'Unassigned';
+      return `
       <div class="job-card" data-id="${j.id}">
         <div class="job-card-top">
           <div>
@@ -300,11 +327,12 @@ async function loadJobs() {
           <span class="${badgeClass(j.status)}">${j.status}</span>
         </div>
         <div class="meta">
-          Customer: ${escapeHtml(j.customerName)} &nbsp;•&nbsp; Engineer: ${escapeHtml(j.assignedEngineerName || 'Unassigned')}
+          Customer: ${escapeHtml(j.customerName)} &nbsp;•&nbsp; Engineers: ${escapeHtml(engineerNames)} &nbsp;•&nbsp; PM: ${escapeHtml(j.assignedPmName || 'Unassigned')}
           ${j.productionDetails?.deadline ? ' &nbsp;•&nbsp; Due ' + j.productionDetails.deadline : ''}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     listEl.querySelectorAll('.job-card').forEach((card) => {
       card.addEventListener('click', () => openJobModal(card.dataset.id));
@@ -331,17 +359,38 @@ async function openJobModal(id) {
   document.getElementById('modalTitle').textContent = `#${job.jobNumber} — ${job.title}`;
   const pd = job.productionDetails || {};
 
-  const isAdminOrPM = user.role === 'admin' || user.role === 'production_manager';
-  const canManageJob = isAdminOrPM || (user.role === 'engineer' && job.assignedEngineerId === user.id);
+  // Mirrors the backend's permission model exactly (src/routes/jobs.js) so
+  // we never show a control that would 403 — a PM only manages a job while
+  // they're its *currently* assigned PM, not just because they created it.
+  const isAssignedPM = user.role === 'production_manager' && job.assignedPmId === user.id;
+  const isAssignedEngineer = user.role === 'engineer' && (job.engineers || []).some((e) => e.id === user.id);
+  const canManageAssignments = user.role === 'admin' || isAssignedPM;
+  const canManageJob = user.role === 'admin' || isAssignedPM || isAssignedEngineer;
 
   let actionsHtml = '';
 
-  if (isAdminOrPM && !job.assignedEngineerId) {
+  if (canManageAssignments) {
+    const engineerChips = (job.engineers || []).map((e) => `
+      <span class="role-chip" data-engineer-id="${e.id}">
+        ${escapeHtml(e.name)}
+        <button type="button" class="chip-remove-btn" data-engineer-id="${e.id}" title="Remove">×</button>
+      </span>`).join('') || '<span class="empty-state">No engineers assigned yet.</span>';
+
     actionsHtml += `
       <div style="margin-top:16px;">
-        <label>Assign Engineer</label>
-        <select id="assignEngineerSelect"><option value="">Loading engineers…</option></select>
-        <button class="btn-secondary" id="assignBtn" style="margin-top:8px;">Assign & Notify</button>
+        <label>Engineers</label>
+        <div class="role-chips" id="engineerChips">${engineerChips}</div>
+        <div class="inline-form">
+          <select id="addEngineerSelect"><option value="">Loading engineers…</option></select>
+          <button class="btn-secondary" id="addEngineerBtn">Add Engineer</button>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <label>Production Manager</label>
+        <div class="inline-form">
+          <select id="pmSelect"><option value="">Loading production managers…</option></select>
+          <button class="btn-secondary" id="savePmBtn">Save</button>
+        </div>
       </div>`;
   }
 
@@ -381,7 +430,8 @@ async function openJobModal(id) {
     <span class="${badgeClass(job.status)}">${job.status}</span>
     <div style="margin-top:14px;">
       <div class="detail-row"><span>Customer</span><span>${escapeHtml(job.customerName)} (${escapeHtml(job.customerEmail)})</span></div>
-      <div class="detail-row"><span>Assigned Engineer</span><span>${escapeHtml(job.assignedEngineerName || 'Unassigned')}</span></div>
+      <div class="detail-row"><span>Engineers</span><span>${(job.engineers || []).length ? job.engineers.map((e) => escapeHtml(e.name)).join(', ') : 'Unassigned'}</span></div>
+      <div class="detail-row"><span>Production Manager</span><span>${escapeHtml(job.assignedPmName || 'Unassigned')}</span></div>
       <div class="detail-row"><span>Materials</span><span>${
         (pd.materials || []).length
           ? (pd.materials || []).map((m) => `${escapeHtml(m.material) || '—'}${m.quantity ? ' (' + escapeHtml(m.quantity) + ')' : ''}`).join('<br/>')
@@ -437,22 +487,56 @@ async function openJobModal(id) {
     });
   }
 
-  if (isAdminOrPM && !job.assignedEngineerId) {
+  if (canManageAssignments) {
     try {
       const engineers = await api('/users?role=engineer');
-      const sel = document.getElementById('assignEngineerSelect');
-      sel.innerHTML = engineers.length
-        ? '<option value="">Select engineer…</option>' + engineers.map((e) => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.email)})</option>`).join('')
-        : '<option value="">No engineers registered yet</option>';
+      const assignedIds = new Set((job.engineers || []).map((e) => e.id));
+      const available = engineers.filter((e) => !assignedIds.has(e.id));
+      const sel = document.getElementById('addEngineerSelect');
+      sel.innerHTML = available.length
+        ? '<option value="">Select engineer…</option>' + available.map((e) => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.email)})</option>`).join('')
+        : '<option value="">All engineers already assigned</option>';
     } catch (err) { /* ignore */ }
 
-    document.getElementById('assignBtn').addEventListener('click', async () => {
-      const engineerId = document.getElementById('assignEngineerSelect').value;
+    document.getElementById('addEngineerBtn').addEventListener('click', async () => {
+      const engineerId = document.getElementById('addEngineerSelect').value;
       if (!engineerId) { toast('Select an engineer first'); return; }
       try {
-        const res = await api(`/jobs/${job.id}/assign`, { method: 'PATCH', body: { engineerId } });
-        toast(`Job assigned. ${res.email.sent ? 'Emails sent.' : 'Emails logged (SMTP not configured).'}`);
-        overlay.classList.remove('open');
+        const res = await api(`/jobs/${job.id}/engineers`, { method: 'POST', body: { engineerId } });
+        toast(`Engineer added. ${res.email.sent ? 'Emails sent.' : 'Emails logged (SMTP not configured).'}`);
+        openJobModal(job.id);
+        loadJobs();
+      } catch (err) {
+        toast('Error: ' + err.message);
+      }
+    });
+
+    document.querySelectorAll('.chip-remove-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remove this engineer from the job?')) return;
+        try {
+          await api(`/jobs/${job.id}/engineers/${btn.dataset.engineerId}`, { method: 'DELETE' });
+          toast('Engineer removed.');
+          openJobModal(job.id);
+          loadJobs();
+        } catch (err) {
+          toast('Error: ' + err.message);
+        }
+      });
+    });
+
+    try {
+      const pms = await api('/users?role=production_manager');
+      document.getElementById('pmSelect').innerHTML = '<option value="">Unassigned</option>' +
+        pms.map((p) => `<option value="${p.id}" ${job.assignedPmId === p.id ? 'selected' : ''}>${escapeHtml(p.name)} (${escapeHtml(p.email)})</option>`).join('');
+    } catch (err) { /* ignore */ }
+
+    document.getElementById('savePmBtn').addEventListener('click', async () => {
+      const pmId = document.getElementById('pmSelect').value || null;
+      try {
+        await api(`/jobs/${job.id}/pm`, { method: 'PATCH', body: { pmId } });
+        toast('Production manager updated.');
+        openJobModal(job.id);
         loadJobs();
       } catch (err) {
         toast('Error: ' + err.message);

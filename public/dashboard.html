@@ -92,6 +92,17 @@
             </div>
           </div>
         </div>
+        <div class="grid-2">
+          <div>
+            <label>Engineers (optional)</label>
+            <select id="jobEngineerIds" multiple size="4"><option value="" disabled>Loading engineers…</option></select>
+            <div style="font-size:12px; color:var(--muted); margin-top:4px;">Hold Ctrl (Cmd on Mac) to select multiple.</div>
+          </div>
+          <div id="jobPmField" style="display:none;">
+            <label>Production Manager (optional)</label>
+            <select id="jobPmSelect"><option value="">Unassigned</option></select>
+          </div>
+        </div>
         <label>Description</label>
         <textarea id="jobDescription" placeholder="What needs to be produced?"></textarea>
         <label>Materials</label>

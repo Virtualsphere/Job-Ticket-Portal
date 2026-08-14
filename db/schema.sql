@@ -31,14 +31,27 @@ CREATE TABLE IF NOT EXISTS jobs (
   deadline DATE NULL,
   specifications TEXT,
   customer_id INT NOT NULL,
-  assigned_engineer_id INT DEFAULT NULL,
+  assigned_pm_id INT DEFAULT NULL,
   created_by INT NOT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'Created',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_jobs_customer FOREIGN KEY (customer_id) REFERENCES users(id),
-  CONSTRAINT fk_jobs_engineer FOREIGN KEY (assigned_engineer_id) REFERENCES users(id),
+  CONSTRAINT fk_jobs_pm FOREIGN KEY (assigned_pm_id) REFERENCES users(id),
   CONSTRAINT fk_jobs_created_by FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+-- Many-to-many: a job can have multiple engineers working on it.
+CREATE TABLE IF NOT EXISTS job_engineers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job_id INT NOT NULL,
+  engineer_id INT NOT NULL,
+  assigned_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_job_engineer (job_id, engineer_id),
+  CONSTRAINT fk_je_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE,
+  CONSTRAINT fk_je_engineer FOREIGN KEY (engineer_id) REFERENCES users(id),
+  CONSTRAINT fk_je_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS job_materials (
