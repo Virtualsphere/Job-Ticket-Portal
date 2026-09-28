@@ -47,26 +47,90 @@ async function initRolesPanel() {
       await api('/roles', { method: 'POST', body: { name, description } });
       toast('Role created.');
       e.target.reset();
-      await loadRoles();
-      await populateNewUserRoleSelect();
-      await populateUserRoleFilter();
+      await refreshRoleViews();
     } catch (err) {
       toast('Error: ' + err.message);
     }
   });
 }
 
+// Mirrors BUILT_IN_ROLES in src/routes/roles.js — these can't be edited or deleted.
+const BUILT_IN_ROLES = ['admin', 'production_manager', 'engineer', 'customer'];
+
 async function loadRoles() {
+  const listEl = document.getElementById('rolesList');
   try {
     const roles = await api('/roles');
-    document.getElementById('rolesList').innerHTML = roles
-      .map((r) => `<span class="role-chip">${escapeHtml(r.name)}</span>`)
+    listEl.innerHTML = roles
+      .map((r) => BUILT_IN_ROLES.includes(r.name)
+        ? `<span class="role-chip" title="Built-in role">${escapeHtml(r.name)}</span>`
+        : `<span class="role-chip" data-role-id="${r.id}" title="${escapeHtml(r.description || '')}">
+            ${escapeHtml(r.name)}
+            <button type="button" class="chip-remove-btn edit-role-btn" title="Edit role">✎</button>
+            <button type="button" class="chip-remove-btn delete-role-btn" title="Delete role">×</button>
+          </span>`)
       .join('') || '<span class="empty-state">No roles yet.</span>';
+
+    const byId = new Map(roles.map((r) => [String(r.id), r]));
+    listEl.querySelectorAll('.edit-role-btn').forEach((btn) => {
+      btn.addEventListener('click', () => openEditRoleModal(byId.get(btn.closest('.role-chip').dataset.roleId)));
+    });
+    listEl.querySelectorAll('.delete-role-btn').forEach((btn) => {
+      btn.addEventListener('click', () => deleteRole(byId.get(btn.closest('.role-chip').dataset.roleId)));
+    });
     return roles;
   } catch (err) {
     toast('Could not load roles: ' + err.message);
     return [];
   }
+}
+
+// Every dropdown/list that shows roles needs refreshing after a role change.
+async function refreshRoleViews() {
+  await loadRoles();
+  await populateNewUserRoleSelect();
+  await populateUserRoleFilter();
+  await loadUsers();
+}
+
+async function deleteRole(r) {
+  if (!confirm(`Delete the role "${r.name}"? This cannot be undone.`)) return;
+  try {
+    await api(`/roles/${r.id}`, { method: 'DELETE' });
+    toast(`Role "${r.name}" deleted.`);
+    await refreshRoleViews();
+  } catch (err) {
+    toast('Error: ' + err.message);
+  }
+}
+
+function openEditRoleModal(r) {
+  document.getElementById('modalTitle').textContent = `Edit Role — ${r.name}`;
+  document.getElementById('modalBody').innerHTML = `
+    <form id="editRoleForm">
+      <label>Role Name</label>
+      <input type="text" id="editRoleName" required value="${escapeHtml(r.name)}" />
+      <label>Description</label>
+      <input type="text" id="editRoleDesc" value="${escapeHtml(r.description || '')}" />
+      <button class="btn-primary" type="submit">Save Changes</button>
+    </form>`;
+  overlay.classList.add('open');
+
+  document.getElementById('editRoleForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('editRoleName').value.trim(),
+      description: document.getElementById('editRoleDesc').value.trim(),
+    };
+    try {
+      const res = await api(`/roles/${r.id}`, { method: 'PUT', body });
+      toast(`Role updated to "${res.name}".`);
+      overlay.classList.remove('open');
+      await refreshRoleViews();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  });
 }
 
 async function populateNewUserRoleSelect() {
