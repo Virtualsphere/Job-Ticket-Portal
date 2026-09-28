@@ -49,6 +49,7 @@ async function initRolesPanel() {
       e.target.reset();
       await loadRoles();
       await populateNewUserRoleSelect();
+      await populateUserRoleFilter();
     } catch (err) {
       toast('Error: ' + err.message);
     }
@@ -143,6 +144,138 @@ async function initCreateUserPanel() {
         : `Account created for ${res.email} (${res.role}), but the welcome email could not be sent — share the password manually.`);
       e.target.reset();
       setPasswordVisible(false);
+      if (user.role === 'admin') loadUsers();
+    } catch (err) {
+      toast('Error: ' + err.message);
+    }
+  });
+}
+
+// ---------- Admin: users panel (filter by role, edit, delete) ----------
+let allRoles = [];
+
+async function populateUserRoleFilter() {
+  const sel = document.getElementById('userRoleFilter');
+  const current = sel.value;
+  try {
+    allRoles = await api('/roles');
+    sel.innerHTML = '<option value="">All roles</option>' +
+      allRoles.map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(ROLE_LABEL[r.name] || r.name)}</option>`).join('');
+    sel.value = current;
+  } catch (err) {
+    toast('Could not load roles: ' + err.message);
+  }
+}
+
+async function initUsersPanel() {
+  if (user.role !== 'admin') return;
+  document.getElementById('usersPanel').style.display = 'block';
+  await populateUserRoleFilter();
+  document.getElementById('userRoleFilter').addEventListener('change', loadUsers);
+  await loadUsers();
+}
+
+async function loadUsers() {
+  const listEl = document.getElementById('usersList');
+  const role = document.getElementById('userRoleFilter').value;
+  try {
+    const users = await api('/users' + (role ? `?role=${encodeURIComponent(role)}` : ''));
+    if (!users.length) {
+      listEl.innerHTML = '<div class="empty-state">No users with this role.</div>';
+      return;
+    }
+    listEl.innerHTML = `
+      <div class="table-wrap">
+        <table class="users-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            ${users.map((u) => `
+              <tr data-id="${u.id}">
+                <td>${escapeHtml(u.name)}</td>
+                <td>${escapeHtml(u.email)}</td>
+                <td><span class="role-chip">${escapeHtml(ROLE_LABEL[u.role] || u.role)}</span></td>
+                <td>${escapeHtml(String(u.created_at).slice(0, 10))}</td>
+                <td class="row-actions">
+                  <button type="button" class="btn-secondary edit-user-btn">Edit</button>
+                  ${u.id === user.id ? '' : '<button type="button" class="btn-secondary btn-danger delete-user-btn">Delete</button>'}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    const byId = new Map(users.map((u) => [String(u.id), u]));
+    listEl.querySelectorAll('.edit-user-btn').forEach((btn) => {
+      btn.addEventListener('click', () => openEditUserModal(byId.get(btn.closest('tr').dataset.id)));
+    });
+    listEl.querySelectorAll('.delete-user-btn').forEach((btn) => {
+      btn.addEventListener('click', () => deleteUser(byId.get(btn.closest('tr').dataset.id)));
+    });
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state">Failed to load users: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function deleteUser(u) {
+  if (!confirm(`Delete ${u.name} (${u.email})? This cannot be undone.`)) return;
+  try {
+    await api(`/users/${u.id}`, { method: 'DELETE' });
+    toast(`${u.name} deleted.`);
+    loadUsers();
+  } catch (err) {
+    toast('Error: ' + err.message);
+  }
+}
+
+function openEditUserModal(u) {
+  const isSelf = u.id === user.id;
+  document.getElementById('modalTitle').textContent = `Edit User — ${u.name}`;
+  document.getElementById('modalBody').innerHTML = `
+    <form id="editUserForm">
+      <label>Full Name</label>
+      <input type="text" id="editUserName" required value="${escapeHtml(u.name)}" />
+      <label>Email</label>
+      <input type="email" id="editUserEmail" required value="${escapeHtml(u.email)}" />
+      <label>Role</label>
+      <select id="editUserRole" ${isSelf ? 'disabled title="You cannot change your own role"' : ''}>
+        ${allRoles.map((r) => `<option value="${r.id}" ${r.id === u.roleId ? 'selected' : ''}>${escapeHtml(ROLE_LABEL[r.name] || r.name)}</option>`).join('')}
+      </select>
+      <label>New Password (leave blank to keep current)</label>
+      <div class="inline-form">
+        <input type="text" id="editUserPassword" minlength="6" autocomplete="new-password" placeholder="At least 6 characters" />
+        <button type="button" class="btn-secondary" id="editUserGenerate">Generate</button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">If you set a new password, it will be emailed to the user.</div>
+      <button class="btn-primary" type="submit">Save Changes</button>
+    </form>`;
+  overlay.classList.add('open');
+
+  document.getElementById('editUserGenerate').addEventListener('click', () => {
+    document.getElementById('editUserPassword').value = generatePassword();
+  });
+
+  document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('editUserName').value.trim(),
+      email: document.getElementById('editUserEmail').value.trim(),
+      roleId: Number(document.getElementById('editUserRole').value),
+    };
+    const password = document.getElementById('editUserPassword').value;
+    if (password) body.password = password;
+    try {
+      const res = await api(`/users/${u.id}`, { method: 'PUT', body });
+      toast(!res.passwordChanged
+        ? `${res.name} updated.`
+        : res.emailSent
+          ? `${res.name} updated. New password emailed to ${res.email}.`
+          : `${res.name} updated, but the password email could not be sent — share the new password manually.`);
+      if (isSelf) {
+        localStorage.setItem('jtp_user', JSON.stringify({ ...user, name: res.name, email: res.email }));
+        document.getElementById('whoami').textContent = `${res.name} · ${ROLE_LABEL[user.role] || user.role}`;
+      }
+      overlay.classList.remove('open');
+      loadUsers();
     } catch (err) {
       toast('Error: ' + err.message);
     }
@@ -562,5 +695,6 @@ async function openJobModal(id) {
 
 initRolesPanel();
 initCreateUserPanel();
+initUsersPanel();
 initCreateJobPanel();
 loadJobs();

@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { query } = require('./db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 
@@ -10,17 +11,28 @@ function signToken(user) {
   );
 }
 
-function verifyToken(req, res, next) {
+// Re-reads the user from the DB on every request so that a deleted user is
+// locked out immediately and role/name/email edits by an admin take effect
+// without waiting for the 7-day token to expire.
+async function verifyToken(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  let payload;
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  const rows = await query(
+    `SELECT u.id, u.name, u.email, r.name AS role
+     FROM users u JOIN roles r ON r.id = u.role_id
+     WHERE u.id = ?`,
+    [payload.id]
+  );
+  if (!rows.length) return res.status(401).json({ error: 'Account no longer exists' });
+  req.user = rows[0];
+  next();
 }
 
 function requireRole(...roles) {

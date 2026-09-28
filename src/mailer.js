@@ -175,4 +175,28 @@ async function sendAccountCreatedEmail(user, plainPassword, roleName) {
   return dispatch(user.email, subject, html);
 }
 
-module.exports = { sendJobEmail, sendAccountCreatedEmail, mailEnabled: () => mailEnabled };
+/**
+ * Notify a user that an administrator has reset their password, including the new one.
+ */
+async function sendPasswordChangedEmail(user, plainPassword) {
+  const subject = `Your ${MAIL_FROM_NAME} password has been changed`;
+  const html = `
+  <div style="font-family: Arial, Helvetica, sans-serif; max-width: 560px; margin: 0 auto; color:#1f2937;">
+    <div style="background:#111827; padding:20px 24px; border-radius:8px 8px 0 0;">
+      <h2 style="color:#fff; margin:0; font-size:18px;">Password Changed</h2>
+    </div>
+    <div style="border:1px solid #e5e7eb; border-top:none; padding:24px; border-radius:0 0 8px 8px;">
+      <p style="font-size:14px; line-height:1.5;">Hi ${user.name},</p>
+      <p style="font-size:14px; line-height:1.5;">An administrator has changed the password for your ${MAIL_FROM_NAME} account. Your previous password will no longer work. Use the details below to log in:</p>
+      <table style="width:100%; border-collapse:collapse; font-size:14px; margin-top:12px;">
+        <tr><td style="padding:6px 0; color:#6b7280;">Email</td><td style="padding:6px 0; font-weight:bold;">${user.email}</td></tr>
+        <tr><td style="padding:6px 0; color:#6b7280;">New Password</td><td style="padding:6px 0; font-weight:bold;">${plainPassword}</td></tr>
+      </table>
+      <p style="font-size:13px; color:#6b7280; margin-top:18px;">If you did not expect this change, please contact your administrator.</p>
+      <a href="${APP_BASE_URL}" style="display:inline-block; margin-top:10px; background:#111827; color:#fff; text-decoration:none; padding:10px 16px; border-radius:6px; font-size:13px;">Log In</a>
+    </div>
+  </div>`;
+  return dispatch(user.email, subject, html);
+}
+
+module.exports = { sendJobEmail, sendAccountCreatedEmail, sendPasswordChangedEmail, mailEnabled: () => mailEnabled };

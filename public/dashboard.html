@@ -74,6 +74,15 @@
       </form>
     </div>
 
+    <!-- Admin: view / edit / delete existing users -->
+    <div class="panel" id="usersPanel" style="display:none;">
+      <div class="panel-head">
+        <h2>Users</h2>
+        <select id="userRoleFilter" aria-label="Filter by role"><option value="">All roles</option></select>
+      </div>
+      <div id="usersList"><div class="empty-state">Loading…</div></div>
+    </div>
+
     <!-- Admin / Production Manager: create job -->
     <div class="panel" id="createJobPanel" style="display:none;">
       <h2>Create a New Job</h2>
